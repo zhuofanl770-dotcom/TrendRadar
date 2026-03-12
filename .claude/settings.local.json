@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp config/config.yaml /tmp/my_config.yaml)",
+      "Bash(cp config/timeline.yaml /tmp/my_timeline.yaml)",
+      "Bash(cp config/frequency_words.txt /tmp/my_frequency_words.txt)"
+    ]
+  }
+}
