@@ -1,6 +1,7 @@
 name = "trendradar-push-trigger"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+workers_dev = false
 
 # UTC 时间，对应北京时间 08:05 和 20:05，必须落在 config/timeline.yaml 的推送时段内
 [triggers]
