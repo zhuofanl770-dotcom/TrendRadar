@@ -139,7 +139,7 @@ rss:
      
     - id: "yahoo-finance"
       name: "雅虎财经"
-      url: "https://finance.yahoo.com/news/rssindex"
+      url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC&region=US&lang=en-US"
 
     # 自定义源示例
     # - id: "custom-feed"

@@ -769,6 +769,36 @@ class SQLiteStorageMixin:
             print(f"[存储] 检查时间段执行记录失败: {e}")
             return False
 
+    def get_last_push_time(self, date_str: str) -> Optional[str]:
+        """
+        获取当天最近一次成功推送的时间
+
+        Args:
+            date_str: 日期字符串 YYYY-MM-DD
+
+        Returns:
+            形如 YYYY-MM-DD HH:MM:SS 的时间；当天未推送过时返回 None
+        """
+        try:
+            cursor = self._get_connection(date_str).cursor()
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='period_executions'
+            """)
+            if not cursor.fetchone():
+                return None
+
+            cursor.execute("""
+                SELECT MAX(executed_at) FROM period_executions
+                WHERE execution_date = ? AND action = 'push'
+            """, (date_str,))
+            return cursor.fetchone()[0]
+
+        except Exception as e:
+            print(f"[存储] 读取最近推送时间失败: {e}")
+            return None
+
     def _record_period_execution_impl(self, date_str: str, period_key: str, action: str) -> bool:
         """
         记录时间段的 action 执行

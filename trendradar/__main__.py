@@ -16,6 +16,7 @@ from trendradar.context import AppContext
 from trendradar import __version__
 from trendradar.core import load_config
 from trendradar.core.analyzer import convert_keyword_stats_to_platform_stats
+from trendradar.core.data import detect_titles_since_from_storage, select_rss_urls_since
 from trendradar.crawler import DataFetcher
 from trendradar.storage import convert_crawl_results_to_news_data
 from trendradar.utils.time import DEFAULT_TIMEZONE, is_within_days, calculate_days_old
@@ -86,6 +87,7 @@ class NewsAnalyzer:
         self._rss_total_count = 0
         self._rss_matched_count = 0
         self._hotlist_total_count = 0
+        self._ai_filter_result = None
 
         # 初始化存储管理器（使用 AppContext）
         self._init_storage_manager()
@@ -214,6 +216,19 @@ class NewsAnalyzer:
             Tuple[stats, id_to_name]: 统计数据和平台映射
         """
         try:
+            # AI 筛选时沿用筛选结果，否则这里会退回 frequency_words.txt 的关键词匹配
+            if self._ai_filter_result and ai_mode in ["daily", "current"]:
+                stats, _, _ = self.ctx.convert_ai_filter_to_report_data(
+                    self._ai_filter_result, mode=ai_mode
+                )
+                if self.ctx.display_mode == "platform" and stats:
+                    stats = convert_keyword_stats_to_platform_stats(
+                        stats,
+                        self.ctx.weight_config,
+                        self.ctx.rank_threshold,
+                    )
+                return stats, current_id_to_name
+
             word_groups, filter_words, global_filters = self.ctx.load_frequency_words(self.frequency_file)
 
             if ai_mode == "incremental":
@@ -338,8 +353,12 @@ class NewsAnalyzer:
             debug_mode = self.ctx.config.get("DEBUG", False)
             analyzer = AIAnalyzer(ai_config, analysis_config, self.ctx.get_time, debug=debug_mode)
 
-            # 确定 AI 分析使用的模式
-            ai_mode_config = analysis_config.get("MODE", "follow_report")
+            # 确定 AI 分析使用的模式：时间线的 ai_mode 优先，调度关闭时才看全局配置
+            ai_mode_config = (
+                schedule.ai_mode
+                if schedule.ai_mode != "follow_report"
+                else analysis_config.get("MODE", "follow_report")
+            )
             if ai_mode_config == "follow_report":
                 # 跟随推送报告模式
                 ai_mode = mode
@@ -677,6 +696,7 @@ class NewsAnalyzer:
 
             if ai_filter_result and ai_filter_result.success:
                 print(f"[筛选] AI 筛选完成: {ai_filter_result.total_matched} 条匹配, {len(ai_filter_result.tags)} 个标签")
+                self._ai_filter_result = ai_filter_result
                 # 转换为与关键词匹配相同的数据结构
                 stats, ai_rss_stats, ai_rss_new_stats = self.ctx.convert_ai_filter_to_report_data(
                     ai_filter_result, mode=mode,
@@ -1388,6 +1408,28 @@ class NewsAnalyzer:
             print(f"[RSS] 生成 HTML 报告失败: {e}")
             return None
 
+    def _collect_new_since_last_push(
+        self, platform_ids: List[str], rss_new_urls: Optional[set]
+    ) -> Tuple[Dict, Optional[set]]:
+        """收集今天上次推送之后才出现的热榜标题和 RSS 条目，今天还没推送过时覆盖全天"""
+        date_str = self.ctx.format_date()
+        last_push = self.storage_manager.get_last_push_time(date_str)
+        # executed_at 形如 2026-11-01 08:11:26，首次抓取时间形如 08-10
+        since = last_push[11:16].replace(":", "-") if last_push else None
+
+        new_titles = detect_titles_since_from_storage(self.storage_manager, since, platform_ids)
+        # ponytail: 只覆盖 AI 筛选路径；AI 筛选失败回退关键词时，RSS 仍只算最新一批
+        rss_data = self.storage_manager.get_rss_data(date_str)
+        if rss_data:
+            rss_new_urls = select_rss_urls_since(rss_data, since)
+
+        title_count = sum(len(titles) for titles in new_titles.values())
+        print(
+            f"[增量] 自{since or '今日零点'}以来新增热榜 {title_count} 条、"
+            f"RSS {len(rss_new_urls or [])} 条"
+        )
+        return new_titles, rss_new_urls
+
     def _execute_mode_strategy(
         self, mode_strategy: Dict, results: Dict, id_to_name: Dict, failed_ids: List,
         rss_items: Optional[List[Dict]] = None,
@@ -1431,6 +1473,11 @@ class NewsAnalyzer:
         current_platform_ids = self.ctx.platform_ids
 
         new_titles = self.ctx.detect_new_titles(current_platform_ids)
+        # 只推一次的时段里，两次推送之间可能隔了多轮不推送的抓取，新增要从上次推送算起
+        if self.report_mode == "incremental" and schedule.push and schedule.once_push and schedule.period_key:
+            new_titles, rss_new_urls = self._collect_new_since_last_push(
+                current_platform_ids, rss_new_urls
+            )
         time_info = self.ctx.format_time()
         word_groups, filter_words, global_filters = self.ctx.load_frequency_words(self.frequency_file)
 

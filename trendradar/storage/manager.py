@@ -289,6 +289,10 @@ class StorageManager:
         """记录时间段的 action 执行"""
         return self.get_backend().record_period_execution(date_str, period_key, action)
 
+    def get_last_push_time(self, date_str: str) -> Optional[str]:
+        """获取当天最近一次成功推送的时间"""
+        return self.get_backend().get_last_push_time(date_str)
+
     # === AI 智能筛选存储操作 ===
 
     def begin_batch(self):

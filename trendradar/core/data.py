@@ -195,6 +195,73 @@ def detect_latest_new_titles_from_storage(
         return {}
 
 
+def detect_titles_since_from_storage(
+    storage_manager,
+    since: Optional[str],
+    current_platform_ids: Optional[List[str]] = None,
+) -> Dict:
+    """
+    检测 since 之后才首次出现的标题
+
+    Args:
+        storage_manager: 存储管理器实例
+        since: HH-MM 格式的时间，None 表示返回当天全部标题
+        current_platform_ids: 当前监控的平台 ID 列表（用于过滤）
+
+    Returns:
+        Dict: 新增标题 {source_id: {title: title_data}}
+    """
+    all_data = storage_manager.get_today_all_data()
+    if not all_data or not all_data.items:
+        return {}
+
+    new_titles = {}
+    for source_id, news_list in all_data.items.items():
+        if current_platform_ids is not None and source_id not in current_platform_ids:
+            continue
+
+        # 同一标题可能因 URL 不同有多条记录，任何一条早于 since 都算已出现过
+        seen_titles = {
+            item.title
+            for item in news_list
+            if since is not None and (item.first_time or item.crawl_time) <= since
+        }
+        titles = {
+            item.title: {
+                "ranks": item.ranks or [item.rank],
+                "url": item.url or "",
+                "mobileUrl": item.mobile_url or "",
+            }
+            for item in news_list
+            if item.title not in seen_titles
+        }
+        if titles:
+            new_titles[source_id] = titles
+
+    return new_titles
+
+
+def select_rss_urls_since(rss_data, since: Optional[str]) -> set:
+    """
+    选出 since 之后才首次抓取到的 RSS 条目 URL
+
+    Args:
+        rss_data: 当天的 RSSData
+        since: HH-MM 格式的时间，None 表示返回当天全部条目
+
+    Returns:
+        set: RSS 条目 URL 集合
+    """
+    # RSS 的抓取时间是 HH:MM，热榜是 HH-MM，这里统一后再比较
+    return {
+        item.url
+        for items in rss_data.items.values()
+        for item in items
+        if item.url
+        and (since is None or (item.first_time or item.crawl_time).replace(":", "-") > since)
+    }
+
+
 def detect_latest_new_titles(
     storage_manager,
     current_platform_ids: Optional[List[str]] = None,
