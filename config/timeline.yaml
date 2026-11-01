@@ -462,7 +462,7 @@ custom:
     morning_push:
       name: "早间推送"
       start: "08:00"
-      end: "10:00"                 # 2小时窗口，保证触发
+      end: "10:00"                 # 由 cloudflare/push-trigger 在 08:05 准点触发；GitHub 自身的定时任务经常跳过这个窗口
       analyze: true                # 做 AI 分析
       ai_mode: "current"           # AI 分析当前榜单
       push: true
@@ -471,11 +471,11 @@ custom:
     evening_push:
       name: "晚间推送"
       start: "20:00"
-      end: "22:00"                 # 2小时窗口，保证触发
+      end: "22:00"                 # 由 cloudflare/push-trigger 在 20:05 准点触发
       analyze: true                # 做 AI 分析
       ai_mode: "daily"             # AI 汇总全天内容
       push: true
-      report_mode: "incremental"   # 只推送新增内容，不重复
+      report_mode: "incremental"   # 只推送上次推送以来的新增，不重复也不漏
 
   day_plans:
     all_day:
